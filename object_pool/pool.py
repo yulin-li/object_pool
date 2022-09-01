@@ -264,9 +264,6 @@ class ObjectPool(metaclass=SingletonMetaPoolRegistry):
     def _get_resource(self):
         """Returns pool if the pool is not empty else creates and sends pool to the client."""
         with self._lock:
-            if self.alive_resources >= self.max_resources and not self.create_resource_when_pool_full:
-                raise ResourceExhausted()
-
             pool_size = self.get_pool_size()
 
             if pool_size == 0:
@@ -366,6 +363,8 @@ class ObjectPool(metaclass=SingletonMetaPoolRegistry):
         """
 
         with self._lock:
+            if self.alive_resources >= self.max_capacity and not self.create_resource_when_pool_full:
+                raise ResourceExhausted()
             self.alive_resources += 1
 
         if self.__cloning:
