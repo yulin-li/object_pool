@@ -11,3 +11,8 @@ class InvalidMaxCapacity(Exception):
 class InvalidClass(Exception):
     def __init__(self, klass):
         self.message = f"ERROR:: {klass} is not a valid class."
+
+
+class ResourceExhausted(Exception):
+    def __init__(self, resource_name):
+        self.message = f"ERROR:: {resource_name}: resource is exhausted."

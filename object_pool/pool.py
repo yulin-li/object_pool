@@ -10,7 +10,8 @@
 import datetime
 from copy import deepcopy
 from queue import Queue
-from .exception import InvalidMinInitCapacity, InvalidMaxCapacity, InvalidClass
+import threading
+from .exception import InvalidMinInitCapacity, InvalidMaxCapacity, InvalidClass, ResourceExhausted
 from .singleton_meta import SingletonMetaPoolRegistry
 
 
@@ -104,7 +105,8 @@ class ObjectPool(metaclass=SingletonMetaPoolRegistry):
     """
 
     def __init__(self, klass, max_capacity=20, min_init=3, max_reusable=20,
-                 expires=600, lazy=False, pre_check=False, post_check=True, cloning=False):
+                 expires=600, lazy=False, pre_check=False, post_check=True,
+                 cloning=False, create_resource_when_pool_full=True):
         """
         Creates pool with given configuration
         """
@@ -126,6 +128,8 @@ class ObjectPool(metaclass=SingletonMetaPoolRegistry):
         self.expire_in_secs = expires
         self.pre_check = pre_check
         self.post_check = post_check
+        self.create_resource_when_pool_full = create_resource_when_pool_full
+        self.alive_resources = 0
 
         self.__check_func = klass_check_invalid or None
         self.__cleanup_func = klass_cleanup or None
@@ -149,6 +153,8 @@ class ObjectPool(metaclass=SingletonMetaPoolRegistry):
 
         if self.__cloning:
             self.__reserved_resource = self.klass()
+
+        self._lock = threading.RLock()
 
         if not lazy:
             self.__create_init_pool()
@@ -257,17 +263,21 @@ class ObjectPool(metaclass=SingletonMetaPoolRegistry):
 
     def _get_resource(self):
         """Returns pool if the pool is not empty else creates and sends pool to the client."""
-        pool_size = self.get_pool_size()
+        with self._lock:
+            if self.alive_resources >= self.max_resources and not self.create_resource_when_pool_full:
+                raise ResourceExhausted()
 
-        if pool_size == 0:
-            obj = self.__create_new_pool_resource()
-            obj_stats = self._get_default_stats()
-        else:
-            obj, obj_stats = self.__pool.get()
-            if self.pre_check:
-                obj, obj_stats = self.__check_and_get_resource(obj, obj_stats)
+            pool_size = self.get_pool_size()
 
-        return obj, obj_stats
+            if pool_size == 0:
+                obj = self.__create_new_pool_resource()
+                obj_stats = self._get_default_stats()
+            else:
+                obj, obj_stats = self.__pool.get()
+                if self.pre_check:
+                    obj, obj_stats = self.__check_and_get_resource(obj, obj_stats)
+
+            return obj, obj_stats
 
     def _queue_resource(self, resource, resource_stats):
         """Once client release the resource, this method puts back to the queue to re-use."""
@@ -355,6 +365,9 @@ class ObjectPool(metaclass=SingletonMetaPoolRegistry):
             - Creates new resource instance if cloning=False
         """
 
+        with self._lock:
+            self.alive_resources += 1
+
         if self.__cloning:
             resource = deepcopy(self.__reserved_resource)
         else:
@@ -386,6 +399,9 @@ class ObjectPool(metaclass=SingletonMetaPoolRegistry):
 
     def __resource_cleanup(self, resource, resource_stats):
         """Calls cleanup function if that is provided while creating pool."""
+
+        with self._lock:
+            self.alive_resources -= 1
 
         if callable(self.__cleanup_func):
             self.__cleanup_func(resource, **resource_stats)
