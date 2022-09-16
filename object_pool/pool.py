@@ -370,7 +370,7 @@ class ObjectPool(metaclass=SingletonMetaPoolRegistry):
 
         with self._lock:
             if self.alive_resources >= self.max_capacity and not self.create_resource_when_pool_full:
-                raise ResourceExhausted()
+                raise ResourceExhausted(self.pool_name)
             self.alive_resources += 1
 
         if self.__cloning:

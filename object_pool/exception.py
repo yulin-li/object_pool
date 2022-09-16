@@ -14,5 +14,5 @@ class InvalidClass(Exception):
 
 
 class ResourceExhausted(Exception):
-    def __init__(self, resource_name):
-        self.message = f"ERROR:: {resource_name}: resource is exhausted."
+    def __init__(self, pool_name):
+        self.message = f"ERROR:: cannot get instance as {pool_name} is out of resource."
